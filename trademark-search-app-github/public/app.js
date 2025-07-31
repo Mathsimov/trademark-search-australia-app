@@ -65,12 +65,19 @@
                 }
                 document.body.removeChild(temp);
             }
+
+            if (typeof gtag === 'function') {
+                gtag('event', 'copy_breakdown', { non_interaction: true });
+            }
         }
 
         async function handleSearch() {
             const trimmed = namesInput.trim();
-            if (!trimmed) {
-                return;
+            if (!trimmed) return;
+            // Track the search event before or after your API call
+            if (typeof gtag === 'function') {
+                // GA4 recommended search event: include the term the user searched for
+                gtag('event', 'search', { search_term: trimmed });
             }
             setLoading(true);
             setError(null);
