@@ -41,6 +41,39 @@
         // filings. The keys are the search names and values are booleans.
         const [expandedCards, setExpandedCards] = useState({});
 
+        // Filtering options for result tables. Users can toggle which
+        // classes to display and choose a sort order. By default all
+        // classes are shown and no sorting is applied.
+        const [filterOptions, setFilterOptions] = useState({
+            show028: true,
+            show041: true,
+            show009: true,
+            showOther: true,
+            sortBy: 'none' // 'none' | 'appNumber' | 'filingDate'
+        });
+
+        // Track loading status for each chip name. Keys are names and
+        // values are either 'pending' or 'done'. Currently this is
+        // retained for potential future use but no progress indicator
+        // is displayed in the UI.
+        const [loadingNames, setLoadingNames] = useState({});
+
+        // History of previously searched names. Loaded from localStorage on
+        // mount and updated whenever a search completes. Users can click
+        // history items to re‑add them as chips.
+        const [history, setHistory] = useState([]);
+
+        // Whether the history section is currently expanded. When false, only
+        // the History label is shown; when true, history entries and the
+        // clear history button are visible. Starts collapsed by default.
+        const [historyExpanded, setHistoryExpanded] = useState(false);
+
+        // Toggle the expanded state of the history section. Clicking the
+        // History label calls this function to show or hide the entries.
+        function toggleHistory() {
+            setHistoryExpanded(prev => !prev);
+        }
+
         /**
          * Toggle the expanded state for a particular search card. When
          * expanded, all trademark filings including lower priority classes
@@ -52,6 +85,22 @@
         function toggleExpand(name) {
             setExpandedCards(prev => ({ ...prev, [name]: !prev[name] }));
         }
+
+        // On mount, load search history from localStorage. If none exists,
+        // initialize with an empty array.
+        useEffect(() => {
+            try {
+                const stored = localStorage.getItem('searchHistory');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed)) {
+                        setHistory(parsed);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load search history', err);
+            }
+        }, []);
 
         /**
          * Remove all currently selected chips. This helper uses the
@@ -67,6 +116,104 @@
             setChips(prev => prev.filter((_, idx) => !selectedIndices.has(idx)));
             // Clear the selection state
             setSelectedIndices(new Set());
+        }
+
+        /**
+         * Update the search history with a new set of names. Maintains
+         * uniqueness and persists to localStorage. New names are placed
+         * at the beginning of the list so the most recent appear first.
+         * @param {string[]} names
+         */
+        function updateHistory(names) {
+            setHistory(prev => {
+                const existing = new Set(prev);
+                const combined = [];
+                names.forEach(n => {
+                    if (!existing.has(n)) combined.push(n);
+                });
+                const updated = [...combined, ...prev];
+                // Persist to localStorage for future sessions
+                try {
+                    localStorage.setItem('searchHistory', JSON.stringify(updated));
+                } catch (err) {
+                    console.error('Failed to save history', err);
+                }
+                return updated;
+            });
+        }
+
+        /**
+         * Add a name from history back into the chips array. Avoids
+         * duplicates. Called when a history chip is clicked.
+         * @param {string} name
+         */
+        function addChipFromHistory(name) {
+            setChips(prev => {
+                if (prev.includes(name)) return prev;
+                return [...prev, name];
+            });
+        }
+
+        /**
+         * Remove all chips and any highlighted selections. Also clears the
+         * current input value.
+         */
+        function handleClearAll() {
+            setChips([]);
+            setInputValue('');
+            setSelectedIndices(new Set());
+        }
+
+        /**
+         * Export the current results as a CSV file. Each row contains
+         * the search name and details for every trademark filing. If no
+         * results are available, this function does nothing.
+         */
+        function handleExport() {
+            if (!results) return;
+            const rows = [];
+            rows.push('Name,Application #,Word Mark,Owner,Filing Date,Status,Classes');
+            Object.entries(results).forEach(([name, info]) => {
+                if (!info || info.error || !Array.isArray(info.details)) return;
+                info.details.forEach(det => {
+                    const owner = (det.ownerName || det.owner || '')
+                        .replace(/\s*[-]+>\s*/g, ' ')
+                        .trim();
+                    const classes = Array.isArray(det.classes) ? det.classes.join(' ') : '';
+                    const row = [
+                        name,
+                        det.applicationNumber || '',
+                        det.wordMark || '',
+                        owner,
+                        det.filingDate || '',
+                        det.status || '',
+                        classes
+                    ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',');
+                    rows.push(row);
+                });
+            });
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'trademark_results.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        /**
+         * Clear the search history without affecting cached results. This
+         * removes all history entries from state and localStorage.
+         */
+        function handleClearHistory() {
+            setHistory([]);
+            try {
+                localStorage.removeItem('searchHistory');
+            } catch (err) {
+                console.error('Failed to clear history', err);
+            }
         }
 
         /**
@@ -95,6 +242,43 @@
          */
         function handleInputKeyDown(e) {
             const key = e.key;
+            // Arrow key navigation: move selection between chips with arrow keys.
+            if ((key === 'ArrowLeft' || key === 'ArrowRight') && !e.ctrlKey && !e.metaKey) {
+                const inputEl = inputRef.current;
+                if (key === 'ArrowLeft') {
+                    // If input is empty and cursor at start and no selection, select last chip
+                    if ((!selectedIndices || selectedIndices.size === 0) && inputEl && inputEl.selectionStart === 0 && inputValue.trim() === '' && chips.length > 0) {
+                        e.preventDefault();
+                        setSelectedIndices(new Set([chips.length - 1]));
+                        return;
+                    }
+                    // If a chip is selected, move to the previous chip
+                    if (selectedIndices && selectedIndices.size > 0) {
+                        const minIndex = Math.min(...selectedIndices);
+                        if (minIndex > 0) {
+                            e.preventDefault();
+                            setSelectedIndices(new Set([minIndex - 1]));
+                            return;
+                        }
+                    }
+                } else if (key === 'ArrowRight') {
+                    // If a chip is selected, move to the next chip or deselect
+                    if (selectedIndices && selectedIndices.size > 0) {
+                        const maxIndex = Math.max(...selectedIndices);
+                        if (maxIndex < chips.length - 1) {
+                            e.preventDefault();
+                            setSelectedIndices(new Set([maxIndex + 1]));
+                            return;
+                        } else {
+                            // Deselect and focus input
+                            e.preventDefault();
+                            setSelectedIndices(new Set());
+                            if (inputRef.current) inputRef.current.focus();
+                            return;
+                        }
+                    }
+                }
+            }
             // If chips are currently selected, handle removal or replacement before other keys.
             if (selectedIndices && selectedIndices.size > 0) {
                 // On Backspace or Delete, simply remove the selected chips. Prevent default to avoid
@@ -540,6 +724,11 @@
             if (list.length === 0) {
                 return;
             }
+            // Mark all names as loading/pending
+            setLoadingNames(list.reduce((acc, n) => {
+                acc[n] = 'pending';
+                return acc;
+            }, {}));
             setLoading(true);
             setError(null);
             setResults(null);
@@ -583,6 +772,16 @@
                     }
                 });
                 setResults(combined);
+                // Mark each name as done in loadingNames
+                setLoadingNames(prev => {
+                    const updated = { ...prev };
+                    list.forEach(n => {
+                        updated[n] = 'done';
+                    });
+                    return updated;
+                });
+                // Update search history
+                updateHistory(list);
             } catch (err) {
                 setError(err.message);
             } finally {
@@ -639,7 +838,7 @@
                                             style: {
                                                 verticalAlign: 'middle',
                                                 marginLeft: '8px',
-                                            },
+                                            }
                                         },
                                             info.explanation
                                         )
@@ -674,8 +873,46 @@
                                             }
                                         });
                                         const isExpanded = expandedCards[name] || false;
-                                        const displayList = isExpanded ? [...priority1, ...priority2, ...others] : [...priority1, ...priority2];
-                                        // Build table rows for the display list
+                                        // Determine which entries to show based on expansion
+                                        let displayList = isExpanded ? [...priority1, ...priority2, ...others] : [...priority1, ...priority2];
+                                        // Apply class filters based on user selection. An entry is shown
+                                        // if it contains at least one selected class. The "Other"
+                                        // checkbox controls rows that have none of the priority classes.
+                                        displayList = displayList.filter(det => {
+                                            let classesList = [];
+                                            if (Array.isArray(det.classes)) {
+                                                classesList = det.classes.map(String);
+                                            } else if (det.classes && typeof det.classes === 'string') {
+                                                classesList = det.classes.split(/[,\s]+/).filter(Boolean);
+                                            }
+                                            const has028 = classesList.includes('028');
+                                            const has041 = classesList.includes('041');
+                                            const has009 = classesList.includes('009');
+                                            // Determine if this row falls into other
+                                            const isOther = !has028 && !has041 && !has009;
+                                            // Check selected filters
+                                            if (has028 && !filterOptions.show028) return false;
+                                            if (has041 && !filterOptions.show041) return false;
+                                            if (has009 && !filterOptions.show009) return false;
+                                            if (isOther && !filterOptions.showOther) return false;
+                                            return true;
+                                        });
+                                        // Apply sorting if requested
+                                        if (filterOptions.sortBy === 'appNumber') {
+                                            displayList.sort((a, b) => {
+                                                const A = a.applicationNumber || '';
+                                                const B = b.applicationNumber || '';
+                                                return A.localeCompare(B);
+                                            });
+                                        } else if (filterOptions.sortBy === 'filingDate') {
+                                            displayList.sort((a, b) => {
+                                                // Convert filingDate to timestamp; blank values go last
+                                                const ta = a.filingDate ? Date.parse(a.filingDate) : 0;
+                                                const tb = b.filingDate ? Date.parse(b.filingDate) : 0;
+                                                return tb - ta;
+                                            });
+                                        }
+                                        // Build table rows for the filtered and sorted list
                                         const rows = displayList.map((det, idx) =>
                                             React.createElement(
                                                 'tr', {
@@ -860,6 +1097,180 @@
             });
         }
 
+        /**
+         * Render filter controls for results. Includes checkboxes for
+         * classes 028, 041, 009 and Others, and a drop‑down select to
+         * choose sorting. Filters are only shown when results exist.
+         */
+        function renderFilterControls() {
+            if (!results) return null;
+            return React.createElement(
+                'div', {
+                key: 'filters',
+                className: 'filter-controls'
+            },
+                [
+                    // Class filters
+                    ['028', 'show028'],
+                    ['041', 'show041'],
+                    ['009', 'show009'],
+                    ['Other', 'showOther']
+                ].map(([label, keyOpt]) =>
+                    React.createElement(
+                        'label', {
+                        key: `filter-${keyOpt}`,
+                        style: { marginRight: '12px', fontSize: '0.9rem', cursor: 'pointer' }
+                    },
+                        [
+                            React.createElement('input', {
+                                type: 'checkbox',
+                                key: `chk-${keyOpt}`,
+                                checked: filterOptions[keyOpt],
+                                onChange: (e) => {
+                                    const checked = e.target.checked;
+                                    setFilterOptions(prev => ({ ...prev, [keyOpt]: checked }));
+                                },
+                                style: { marginRight: '4px' }
+                            }),
+                            label
+                        ]
+                    )
+                ).concat(
+                    // Sorting select element
+                    React.createElement(
+                        'select', {
+                            key: 'sortSelect',
+                            value: filterOptions.sortBy,
+                            onChange: (e) => {
+                                const val = e.target.value;
+                                setFilterOptions(prev => ({ ...prev, sortBy: val }));
+                            },
+                            style: { marginLeft: 'auto', fontSize: '0.9rem' }
+                        },
+                            [
+                                React.createElement('option', { key: 'opt-none', value: 'none' }, 'Sort: Default'),
+                                React.createElement('option', { key: 'opt-app', value: 'appNumber' }, 'Sort by Application #'),
+                                React.createElement('option', { key: 'opt-date', value: 'filingDate' }, 'Sort by Filing Date')
+                            ]
+                        )
+                )
+            );
+        }
+
+        /**
+         * Render loading progress indicator for each chip. Shows a list of
+         * names with a symbol indicating whether the search has completed
+         * (✔) or is still pending (…). Hidden when no search is in progress.
+         */
+        function renderProgress() {
+            const names = Object.keys(loadingNames || {});
+            // Hide indicator when nothing is loading
+            if (!loading && names.every(n => loadingNames[n] === 'done')) {
+                return null;
+            }
+            return React.createElement(
+                'div', {
+                key: 'progress',
+                className: 'progress-indicator'
+            },
+                names.map(name => {
+                    const status = loadingNames[name];
+                    const symbol = status === 'done' ? '✔' : '…';
+                    return React.createElement(
+                        'span', {
+                        key: name,
+                        className: `progress-item ${status}`,
+                        style: { marginRight: '12px', fontSize: '0.85rem' }
+                    },
+                        `${name} ${symbol}`
+                    );
+                })
+            );
+        }
+
+        /**
+         * Render search history chips. Users can click a history entry to
+         * re‑add it to the chip list. Hidden when history is empty.
+         */
+        function renderHistory() {
+            // Always show the History label with an arrow. Toggle expansion on click.
+            // Build dynamic children based on expansion state and history entries.
+            // Prepare arrow indicating collapse/expand state
+            const arrow = historyExpanded ? '\u25BC' : '\u25B6';
+            // Build the label; clicking toggles expansion
+            const label = React.createElement(
+                'span',
+                {
+                    key: 'histLabel',
+                    onClick: toggleHistory,
+                    style: {
+                        marginRight: '8px',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        cursor: 'pointer',
+                        userSelect: 'none'
+                    }
+                },
+                `History ${arrow}`
+            );
+            // When expanded and there are items, construct a secondary container for clear button and chips
+            let contents = null;
+            if (historyExpanded && history && history.length > 0) {
+                const items = [];
+                // Clear button styled like other action buttons (smaller) defined via CSS
+                items.push(
+                    React.createElement(
+                        'button',
+                        {
+                            key: 'clearHistBtn',
+                            onClick: handleClearHistory,
+                            type: 'button',
+                            className: 'clear-history-btn'
+                        },
+                        'Clear History'
+                    )
+                );
+                history.forEach(name => {
+                    items.push(
+                        React.createElement(
+                            'span',
+                            {
+                                key: name,
+                                className: 'history-chip',
+                                onClick: () => addChipFromHistory(name),
+                                style: {
+                                    display: 'inline-block',
+                                    background: 'rgba(25, 118, 210, 0.1)',
+                                    border: '1px solid rgba(25, 118, 210, 0.3)',
+                                    borderRadius: '12px',
+                                    padding: '3px 6px',
+                                    marginRight: '6px',
+                                    marginBottom: '4px',
+                                    fontSize: '0.85rem',
+                                    color: '#1976d2',
+                                    cursor: 'pointer'
+                                }
+                            },
+                            name
+                        )
+                    );
+                });
+                contents = React.createElement(
+                    'div',
+                    { key: 'histContents', className: 'history-items' },
+                    items
+                );
+            }
+            return React.createElement(
+                'div',
+                {
+                    key: 'history',
+                    className: 'history'
+                },
+                contents ? [label, contents] : [label]
+            );
+        }
+
         return React.createElement(
             'div', {
             className: 'container'
@@ -878,6 +1289,11 @@
                     }, 'by Robert McKone'),
                     /* Chip input replaces the traditional textarea. */
                     renderTagInput(),
+                    /* Search history chips */
+                    renderHistory(),
+                    /* Progress indicator removed */
+                    /* Result filter controls (only shown when results exist) */
+                    renderFilterControls(),
 
                     React.createElement(
                         'div', {
@@ -898,14 +1314,33 @@
                             },
                                 loading ? 'Searching…' : 'Search'
                             ),
+                            /* Clear all chips */
+                            React.createElement(
+                                'button', {
+                                key: 'clearButton',
+                                onClick: handleClearAll,
+                                disabled: chips.length === 0
+                            },
+                                'Clear'
+                            ),
+                            /* Copy results breakdown */
                             results ?
                                 React.createElement(
                                     'button', {
                                     key: 'copyButton',
-                                    onClick: handleCopy,
-                                    style: {}
+                                    onClick: handleCopy
                                 },
                                     'Copy'
+                                ) :
+                                null,
+                            /* Export results as CSV */
+                            results ?
+                                React.createElement(
+                                    'button', {
+                                    key: 'exportButton',
+                                    onClick: handleExport
+                                },
+                                    'Export CSV'
                                 ) :
                                 null
                         ]

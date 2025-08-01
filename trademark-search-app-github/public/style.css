@@ -171,6 +171,81 @@ button:disabled {
     cursor: default;
 }
 
+/* Filter controls container. Aligns checkboxes and sort selector horizontally
+   with spacing. */
+.filter-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+}
+
+/* Progress indicator list showing loading status for each name */
+.progress-indicator {
+    margin-top: 8px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: #555;
+}
+
+.progress-indicator .pending {
+    color: #1976d2;
+}
+
+.progress-indicator .done {
+    color: #388e3c;
+}
+
+/* Info icon next to risk labels */
+/* Info icon removed; styles no longer needed */
+
+/* Clear history button styling is handled inline but can be customized here if needed */
+
+/* History chip container */
+.history {
+    /* Ensure the history section occupies full width and does not cause
+       layout shifts when expanded. Display the label on its own line. */
+    margin-top: 8px;
+    margin-bottom: 12px;
+    display: block;
+    width: 100%;
+    font-size: 0.85rem;
+}
+
+.history .history-chip:hover {
+    background: rgba(25, 118, 210, 0.2);
+}
+
+/* History items container: flex-wrap ensures chips and the clear button wrap
+   within the same width without affecting the parent container's width. */
+.history-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 4px;
+    /* Ensure the contents container takes up the full available width to
+       prevent it from expanding the parent container when items wrap */
+    width: 100%;
+}
+
+/* Clear history button: styled similarly to other action buttons but smaller */
+.clear-history-btn {
+    background-color: #1976d2;
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    margin-right: 12px;
+    transition: background-color 0.2s ease;
+}
+.clear-history-btn:hover {
+    background-color: #1565c0;
+}
+
 /* Inline show more/less button within result cards. It appears below the
    trademark filing table to toggle display of additional rows. Uses a
    minimalist style to blend with the card design. */
