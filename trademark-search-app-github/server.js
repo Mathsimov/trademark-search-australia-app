@@ -2,6 +2,50 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// Directory used for caching detail pages. Caching persists across
+// requests and server restarts to minimise network traffic for
+// subsequent searches on the same host. Each search term gets its own
+// JSON file keyed by a URI‑encoded version of the term. Within each
+// file we store a mapping from full detail URLs to parsed detail
+// objects. When processing a name, we always hit the search page to
+// discover up‑to‑date detail links but reuse cached detail pages
+// whenever possible. New detail links are fetched on demand and the
+// cache file is updated accordingly.
+const cacheDir = path.join(__dirname, 'cache');
+if (!fs.existsSync(cacheDir)) {
+    try {
+        fs.mkdirSync(cacheDir);
+    } catch (err) {
+        // Ignore errors if directory creation fails; caching simply won't work
+        console.error('Unable to create cache directory', err);
+    }
+}
+
+function loadCache(name) {
+    const safeName = encodeURIComponent(name);
+    const file = path.join(cacheDir, safeName + '.json');
+    if (fs.existsSync(file)) {
+        try {
+            const data = fs.readFileSync(file, 'utf8');
+            return JSON.parse(data);
+        } catch (err) {
+            console.error('Error reading cache file', file, err);
+            return {};
+        }
+    }
+    return {};
+}
+
+function saveCache(name, data) {
+    const safeName = encodeURIComponent(name);
+    const file = path.join(cacheDir, safeName + '.json');
+    try {
+        fs.writeFileSync(file, JSON.stringify(data), 'utf8');
+    } catch (err) {
+        console.error('Error writing cache file', file, err);
+    }
+}
+
 async function fetchPage(url) {
     const res = await fetch(url, {
         headers: {
@@ -128,18 +172,51 @@ function parseDetail(html) {
 async function processName(name) {
     const baseUrl = 'https://www.trademarkelite.com';
     const searchUrl = `${baseUrl}/australia/trademark/trademark-search.aspx?sw=${encodeURIComponent(name)}`;
+    // Always fetch the search page to discover current detail links. Even if
+    // we have cached details for previous runs, new filings may appear and
+    // should be incorporated into the result.
     const searchHtml = await fetchPage(searchUrl);
     const detailLinks = extractDetailLinks(searchHtml);
     const details = [];
     let hasLive = false;
     let hasRedMark = false;
+    // Load cached details for this name if available
+    let cached = {};
+    try {
+        const cache = loadCache(name);
+        cached = cache && cache.detailCache ? cache.detailCache : {};
+    } catch (err) {
+        cached = {};
+    }
     for (const relLink of detailLinks) {
+        const url = baseUrl + relLink;
+        // If this detail page has been cached previously, reuse it
+        if (cached[url]) {
+            const info = cached[url];
+            // ensure the detailUrl property exists
+            if (!info.detailUrl) {
+                info.detailUrl = url;
+            }
+            details.push(info);
+            if (info.status === 'LIVE') {
+                hasLive = true;
+                const includes009 = info.classes.includes('009');
+                const includes028 = info.classes.includes('028');
+                const includes041 = info.classes.includes('041');
+                if (includes009 || includes028 || includes041) {
+                    hasRedMark = true;
+                }
+            }
+            continue;
+        }
+        // Otherwise fetch and parse it now
         try {
-            const url = baseUrl + relLink;
             const html = await fetchPage(url);
             const info = parseDetail(html);
             info.detailUrl = url;
             details.push(info);
+            // Store in cache for future use
+            cached[url] = info;
             if (info.status === 'LIVE') {
                 hasLive = true;
                 const includes009 = info.classes.includes('009');
@@ -155,6 +232,9 @@ async function processName(name) {
             });
         }
     }
+    // Save updated cache back to disk
+    saveCache(name, { detailCache: cached });
+    // Compute a summary score based on live filings and relevant classes
     let score;
     let explanation;
     if (!hasLive) {

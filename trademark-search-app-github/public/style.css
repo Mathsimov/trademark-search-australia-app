@@ -21,7 +21,7 @@ body {
 
 /* Container */
 .container {
-    width: 95%;
+    width: 100%;
     max-width: 1300px;
     margin: 40px 10px;
     padding: 0 25px;
@@ -58,6 +58,87 @@ textarea {
     margin-bottom: 16px;
 }
 
+/*
+ * Custom tag input component for entering multiple search terms.
+ * This replaces the traditional textarea and turns each comma- or
+ * newline‑delimited entry into an interactive chip. Chips can be
+ * clicked to edit their value or removed via a close button. The
+ * input stays focused while typing and clicking elsewhere in the
+ * container also focuses it to avoid accidental deselection.
+ */
+.tag-input {
+    width: 95%;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    min-height: 40px;
+    margin-bottom: 16px;
+    cursor: text;
+    background: rgba(255, 255, 255, 0.8);
+    /* Limit the overall height of the tag input to approximately four lines of chips.
+       Once the content exceeds this height, the container becomes vertically
+       scrollable so the page layout remains stable. */
+    max-height: 160px;
+    overflow-y: auto;
+}
+
+.tag-input input {
+    flex: 1;
+    min-width: 120px;
+    border: none;
+    outline: none;
+    font-size: 1rem;
+    margin: 4px 0;
+    background: transparent;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(25, 118, 210, 0.1);
+    border: 1px solid rgba(25, 118, 210, 0.3);
+    border-radius: 16px;
+    padding: 4px 8px;
+    margin: 4px;
+    font-size: 0.9rem;
+    color: #1976d2;
+    user-select: none;
+}
+
+/* Visual indication for selected chips when the user performs a select all
+   (Ctrl+A) or drags to select. The colours approximate the default
+   selection background seen in native text fields. */
+/* Selected chips display a more pronounced highlight similar to text selections
+   in word processors. A solid blue-ish background with darker border and
+   contrasting text make the selection obvious. */
+.chip.selected {
+    background: rgba(25, 118, 210, 0.4);
+    border-color: rgba(21, 101, 192, 0.7);
+    color: #0d47a1;
+}
+
+.chip span {
+    cursor: pointer;
+    margin-right: 4px;
+}
+
+.chip button {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 4px;
+    color: inherit;
+}
+
+.chip button:focus {
+    outline: none;
+}
+
 /* My name */
 .byline {
     font-size: 1rem;
@@ -88,6 +169,23 @@ button:hover {
 button:disabled {
     background-color: #90caf9;
     cursor: default;
+}
+
+/* Inline show more/less button within result cards. It appears below the
+   trademark filing table to toggle display of additional rows. Uses a
+   minimalist style to blend with the card design. */
+.show-more-button {
+    background: transparent;
+    color: #1976d2;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: 0.9rem;
+    padding: 4px 0;
+    margin-left: 0;
+}
+.show-more-button:hover {
+    color: #0d47a1;
 }
 
 /* Results section */
@@ -265,6 +363,43 @@ button:disabled {
         margin-left: 0;
         margin-right: 0;
     }
+
+    /*
+     * Mobile optimisation for tag inputs and chips. These styles apply
+     * exclusively on screens 600px wide or less to improve usability
+     * without affecting desktop layouts. Chips become larger with more
+     * generous padding, and the tag input stretches to the full width
+     * of the container. Buttons and fonts are also increased for better
+     * touch targets.
+     */
+    .tag-input {
+        width: 100%;
+        min-height: 48px;
+        padding: 10px;
+        /* Increase the max height slightly on mobile to account for larger chips */
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    .tag-input input {
+        min-width: 80px;
+        font-size: 1rem;
+    }
+    .chip {
+        padding: 6px 10px;
+        margin: 6px;
+        font-size: 1rem;
+        border-radius: 20px;
+    }
+    .chip button {
+        font-size: 1rem;
+        padding: 0 6px;
+    }
+    /* Adjust selection highlight for larger chips on mobile */
+    .chip.selected {
+        background: rgba(25, 118, 210, 0.5);
+        border-color: rgba(21, 101, 192, 0.8);
+        color: #0d47a1;
+    }
 }
 
 /* Medium screens: allow two columns of result cards */
@@ -293,6 +428,21 @@ button:disabled {
     button {
         width: 100%;
         margin-top: 8px;
+    }
+
+    /* Further mobile optimisation for very small screens. Increase tag input
+       height slightly and ensure chips remain legible and easy to tap. */
+    .tag-input {
+        min-height: 56px;
+        padding: 12px;
+        /* Allow a bit more room for chips on very small screens */
+        max-height: 220px;
+        overflow-y: auto;
+    }
+    .chip {
+        font-size: 0.95rem;
+        padding: 6px 10px;
+        border-radius: 20px;
     }
 }
 
